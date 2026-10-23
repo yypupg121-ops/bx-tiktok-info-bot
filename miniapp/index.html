@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10131c"><title>BX TikTok Info</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root{color-scheme:dark;--bg:#10131c;--card:#1a1f2c;--line:#2b3345;--txt:#f4f6fb;--muted:#a5aec1;--blue:#5c8dff;--pink:#fc4d83;--green:#20c997}
+    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 10% 0%,#28234a 0,transparent 45%),var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;padding:24px 18px calc(24px + env(safe-area-inset-bottom))}
+    main{max-width:520px;margin:auto}.brand{display:flex;align-items:center;gap:14px;margin:20px 0 26px}.logo{width:54px;height:54px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,var(--blue),var(--pink));font-size:25px;box-shadow:0 10px 30px #5c8dff30}.brand h1{font-size:21px;margin:0}.brand p{margin:4px 0 0;color:var(--muted);font-size:13px}.card{border:1px solid var(--line);background:linear-gradient(145deg,#1b2030,#171b26);border-radius:24px;padding:22px;box-shadow:0 20px 60px #0003}.tag{font-size:12px;color:#b7c8ff;background:#5c8dff18;border:1px solid #5c8dff40;display:inline-flex;padding:7px 11px;border-radius:99px}h2{font-size:22px;margin:16px 0 8px}p{line-height:1.7;color:var(--muted)}label{display:block;font-size:14px;font-weight:650;margin:22px 0 8px}input{width:100%;border:1px solid var(--line);border-radius:15px;background:#10141f;color:var(--txt);padding:15px 16px;font-size:16px;outline:none;transition:.2s}input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #5c8dff22}.hint{font-size:12px;margin:8px 2px 18px}.btn{width:100%;border:0;border-radius:15px;padding:15px;font-size:16px;font-weight:750;color:white;background:linear-gradient(100deg,#477bff,#945dff 55%,#ef4b83);cursor:pointer;box-shadow:0 10px 24px #775cff30}.btn:disabled{opacity:.55;cursor:wait}.features{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.feature{padding:13px;border:1px solid var(--line);border-radius:15px;background:#ffffff05;font-size:13px}.feature b{display:block;margin-bottom:5px}.privacy{font-size:12px;margin:18px 2px 0}.error{color:#ff8ba9;min-height:20px;font-size:13px;margin-top:8px}.foot{text-align:center;font-size:11px;color:#7f899d;margin:18px 0}
+  </style>
+</head>
+<body><main>
+  <header class="brand"><div class="logo">♪</div><div><h1>BX TikTok Info</h1><p>أدوات بسيطة لمعلومات الحساب العامة</p></div></header>
+  <section class="card"><span class="tag">✨ Mini App داخل تيليجرام</span><h2>افحص حساب تيك توك</h2><p>أدخل اسم مستخدم عام لعرض المعلومات المتاحة. لا تدخل كلمة مرورك أو أي بيانات تسجيل دخول.</p>
+    <div class="features"><div class="feature"><b>📊 إحصائيات</b>الأرقام العامة المتاحة</div><div class="feature"><b>📄 تقرير</b>إمكانية تنزيل TXT من البوت</div></div>
+    <form id="form"><label for="username">اسم المستخدم</label><input id="username" name="username" maxlength="30" autocomplete="off" placeholder="مثال: tiktok" aria-describedby="hint error"><div id="hint" class="hint">اكتب الاسم فقط، مع أو بدون @. لا تلصق رابطًا.</div><button id="submit" class="btn" type="submit">🔎 إرسال للفحص</button><div id="error" class="error" role="alert"></div></form>
+    <p class="privacy">🔐 تُرسل قيمة اسم المستخدم إلى بوت تيليجرام لتنفيذ طلبك. المعلومات تأتي من خدمة بيانات خارجية وقد لا تكون دقيقة أو متاحة دائمًا.</p>
+  </section><div class="foot">BXCODE · استخدم الخدمة باحترام وضمن القوانين وشروط المنصة.</div>
+</main>
+<script>
+(() => {
+  const tg = window.Telegram?.WebApp;
+  if (tg) { tg.ready(); tg.expand(); }
+  const form = document.querySelector('#form'), input = document.querySelector('#username'), err = document.querySelector('#error'), submit = document.querySelector('#submit');
+  form.addEventListener('submit', (event) => {
+    event.preventDefault(); err.textContent = '';
+    const username = input.value.trim().replace(/^@+/, '');
+    if (!/^[A-Za-z0-9._]{2,30}$/.test(username)) { err.textContent = 'تأكد من الاسم: من 2 إلى 30 حرفًا/رقمًا أو نقطة أو شرطة سفلية.'; input.focus(); return; }
+    if (!tg || !tg.initData) { err.textContent = 'افتح هذه الصفحة من زر Mini App داخل بوت تيليجرام.'; return; }
+    submit.disabled = true; submit.textContent = '⏳ جارٍ الإرسال…';
+    tg.sendData(JSON.stringify({username}));
+    setTimeout(() => tg.close(), 250);
+  });
+})();
+</script></body></html>
