@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 os.environ.setdefault("BOT_TOKEN", "123456:test-token")
 
@@ -75,13 +76,14 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         expected_order = [
             "<blockquote><b>BX TikTok</b></blockquote>", "الاسم:", "اليوزر:", "الايدي:",
             "الدولة:", "اللغة:", "المتابعين:", "يتابع:", "اللايكات:", "الفيديوهات:",
-            "الحساب:", "النبذه:", "معلومات إضافية",
+            "الحساب:", "النبذه:", "معلومات إضافية", "🔗 الربط -",
         ]
         positions = [rendered.index(value) for value in expected_order]
         self.assertEqual(positions, sorted(positions))
         self.assertIn("&lt;تجريبي&gt;", rendered)
         self.assertIn("الحساب:</b> عام", rendered)
         self.assertIn("النبذه:</b> ماكو", rendered)
+        self.assertIn("مصدر الفحص ما يرجّع معلومات موثوقة", rendered)
         self.assertNotIn("المعلومات عامة وتعرض", rendered)
 
         report = bot.make_report(profile, "sample")
@@ -96,6 +98,8 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([button.text for button in rows[0]], ["🔎 بحث", "⭐ المفضلة"])
         self.assertEqual([button.text for button in rows[1]], ["🔴 إحصائياتي", "📖 شرح البوت"])
         self.assertEqual(rows[1][0].style, "danger")
+        self.assertEqual([button.text for button in rows[2]], ["🔎 كشف الرابط", "⬇️ تحميل مقاطع"])
+        self.assertEqual(rows[2][1].callback_data, "download")
         self.assertEqual(rows[-1][0].text, "📢 قناة BXCODE")
         self.assertEqual(bot.API_URL, "https://tiktokinfov10.itfreeforever.workers.dev")
         self.assertEqual(bot.CHANNEL, "@bxcode")
@@ -110,16 +114,16 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
             await bot.record_search(101, f"account{index}")
         message = FakeMessage()
         await bot.show_stats(message, 101)
-        self.assertIn('المفضلات مالاتك : "0"', message.text)
-        self.assertIn('بحوثاتك كلهن : "12"', message.text)
+        self.assertIn('⭐ المفضلات: "0"', message.text)
+        self.assertIn('🔎 عدد البحوث: "12"', message.text)
         self.assertIn("1. @account11", message.text)
         self.assertIn("10. @account2", message.text)
         self.assertNotIn("@account1</", message.text)
 
         empty_message = FakeMessage()
         await bot.show_stats(empty_message, 202)
-        self.assertIn("بعدك ماباحث عن اي حساب حب", empty_message.text)
-        self.assertIn("مفضلاتك فارغة حب", empty_message.text)
+        self.assertIn("لحد هسه ما بحثت عن حساب", empty_message.text)
+        self.assertIn("قائمة المفضلة فارغة", empty_message.text)
 
     async def test_favorites_list_is_user_scoped_and_has_actions(self):
         await bot.init_db()
@@ -148,6 +152,134 @@ class BotTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):
                     bot.normalize_username(invalid)
+
+    async def test_tiktok_url_validation_accepts_public_and_short_links(self):
+        self.assertEqual(
+            bot.normalize_tiktok_url("www.tiktok.com/@sample/video/123"),
+            "https://www.tiktok.com/@sample/video/123",
+        )
+        self.assertEqual(
+            bot.normalize_tiktok_url("https://vm.tiktok.com/ZMabc/"),
+            "https://vm.tiktok.com/ZMabc/",
+        )
+        for invalid in (
+            "https://tiktok.com.evil.example/@sample/video/123",
+            "https://example.com/?next=tiktok.com",
+            "http://www.tiktok.com/@sample/video/123",
+            "https://user@www.tiktok.com/@sample/video/123",
+        ):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    bot.normalize_tiktok_url(invalid)
+
+    async def test_clipx_quality_mapping_uses_documented_fields(self):
+        video = {
+            "hd_mp4": "https://cdn.example/hd.mp4",
+            "standard_mp4": "https://cdn.example/sd.mp4",
+            "wmplay": "https://cdn.example/wm.mp4",
+        }
+        self.assertEqual(bot.select_video_url({"video": video}, "best"), video["hd_mp4"])
+        self.assertEqual(bot.select_video_url({"video": video}, "hd"), video["hd_mp4"])
+        self.assertEqual(bot.select_video_url({"video": video}, "sd"), video["standard_mp4"])
+        with self.assertRaises(ValueError):
+            bot.select_video_url({"video": {"standard_mp4": video["standard_mp4"]}}, "hd")
+        buttons = [button for row in bot.download_quality_keyboard().inline_keyboard for button in row]
+        self.assertEqual([button.text for button in buttons], [
+            "🎬 أفضل جودة", "📺 HD", "📱 جودة عادية", "❌ إلغاء",
+        ])
+        self.assertEqual([button.callback_data for button in buttons], [
+            "dl:best", "dl:hd", "dl:sd", "download_cancel",
+        ])
+
+    async def test_clipx_request_uses_selected_quality_parameter(self):
+        class FakeResponse:
+            status = 200
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def raise_for_status(self):
+                return None
+
+            async def json(self, content_type=None):
+                return {"success": True, "data": {"video": {"hd_mp4": "https://cdn.example/hd.mp4"}}}
+
+        class FakeSession:
+            def __init__(self):
+                self.request = None
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def get(self, url, *, params):
+                self.request = (url, params)
+                return FakeResponse()
+
+        session = FakeSession()
+        with patch.object(bot.aiohttp, "ClientSession", return_value=session):
+            video_url, _ = await bot.fetch_clipx_video("https://vm.tiktok.com/ZMabc/", "hd")
+        self.assertEqual(video_url, "https://cdn.example/hd.mp4")
+        self.assertEqual(session.request, (
+            "https://clipx.zamdev.workers.dev/",
+            {"url": "https://vm.tiktok.com/ZMabc/", "quality": "hd"},
+        ))
+
+    async def test_clipx_empty_result_and_rate_limit_are_reported(self):
+        class FakeResponse:
+            def __init__(self, status, payload):
+                self.status = status
+                self.payload = payload
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def raise_for_status(self):
+                return None
+
+            async def json(self, content_type=None):
+                return self.payload
+
+        class FakeSession:
+            def __init__(self, response):
+                self.response = response
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *args):
+                return False
+
+            def get(self, url, *, params):
+                return self.response
+
+        with patch.object(bot.aiohttp, "ClientSession", return_value=FakeSession(FakeResponse(200, {"success": False}))):
+            with self.assertRaises(ValueError):
+                await bot.fetch_clipx_video("https://vm.tiktok.com/ZMabc/", "best")
+        with patch.object(bot.aiohttp, "ClientSession", return_value=FakeSession(FakeResponse(429, {}))):
+            with self.assertRaisesRegex(RuntimeError, "حد الطلبات"):
+                await bot.fetch_clipx_video("https://vm.tiktok.com/ZMabc/", "best")
+
+    async def test_video_send_failure_returns_direct_download_link(self):
+        class FakeBot:
+            async def send_video(self, *args, **kwargs):
+                raise RuntimeError("Telegram rejected remote file")
+
+        message = FakeMessage()
+        direct_url = "https://cdn.example/video.mp4"
+        with patch.object(bot, "fetch_clipx_video", return_value=(direct_url, {"title": "Clip"})), \
+             patch.object(bot, "bot", FakeBot(), create=True):
+            await bot.deliver_clip(123, message, "https://vm.tiktok.com/ZMabc/", "best")
+        self.assertIn("رابط التنزيل المباشر", message.text)
+        self.assertEqual(message.reply_markup.inline_keyboard[0][0].url, direct_url)
 
 
 if __name__ == "__main__":
