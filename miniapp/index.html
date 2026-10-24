@@ -1,36 +1,391 @@
 <!doctype html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#10131c"><title>BX TikTok Info</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10130f">
+  <meta name="description" content="BX TikTok — مساحة خفيفة لعرض المعلومات العامة وإدارة مفضلاتك داخل تيليجرام.">
+  <title>BX TikTok · مساحة الحساب</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    :root{color-scheme:dark;--bg:#10131c;--card:#1a1f2c;--line:#2b3345;--txt:#f4f6fb;--muted:#a5aec1;--blue:#5c8dff;--pink:#fc4d83;--green:#20c997}
-    *{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 10% 0%,#28234a 0,transparent 45%),var(--bg);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;min-height:100vh;padding:24px 18px calc(24px + env(safe-area-inset-bottom))}
-    main{max-width:520px;margin:auto}.brand{display:flex;align-items:center;gap:14px;margin:20px 0 26px}.logo{width:54px;height:54px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,var(--blue),var(--pink));font-size:25px;box-shadow:0 10px 30px #5c8dff30}.brand h1{font-size:21px;margin:0}.brand p{margin:4px 0 0;color:var(--muted);font-size:13px}.card{border:1px solid var(--line);background:linear-gradient(145deg,#1b2030,#171b26);border-radius:24px;padding:22px;box-shadow:0 20px 60px #0003}.tag{font-size:12px;color:#b7c8ff;background:#5c8dff18;border:1px solid #5c8dff40;display:inline-flex;padding:7px 11px;border-radius:99px}h2{font-size:22px;margin:16px 0 8px}p{line-height:1.7;color:var(--muted)}label{display:block;font-size:14px;font-weight:650;margin:22px 0 8px}input{width:100%;border:1px solid var(--line);border-radius:15px;background:#10141f;color:var(--txt);padding:15px 16px;font-size:16px;outline:none;transition:.2s}input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #5c8dff22}.hint{font-size:12px;margin:8px 2px 18px}.btn{width:100%;border:0;border-radius:15px;padding:15px;font-size:16px;font-weight:750;color:white;background:linear-gradient(100deg,#477bff,#945dff 55%,#ef4b83);cursor:pointer;box-shadow:0 10px 24px #775cff30}.btn:disabled{opacity:.55;cursor:wait}.features{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:16px 0}.feature{padding:13px;border:1px solid var(--line);border-radius:15px;background:#ffffff05;font-size:13px}.feature b{display:block;margin-bottom:5px}.privacy{font-size:12px;margin:18px 2px 0}.error{color:#ff8ba9;min-height:20px;font-size:13px;margin-top:8px}.foot{text-align:center;font-size:11px;color:#7f899d;margin:18px 0}
+    :root {
+      color-scheme: dark;
+      --bg: #10130f;
+      --surface: #181d17;
+      --surface-2: #20271f;
+      --surface-3: #252e24;
+      --line: #303b2e;
+      --text: #f3f4ea;
+      --muted: #a0aa98;
+      --faint: #74806d;
+      --lime: #c7f36b;
+      --lime-ink: #1b2510;
+      --mint: #75d8b0;
+      --red: #ff8d82;
+      --radius: 24px;
+      --shadow: 0 20px 60px #0005;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; color: var(--text);
+      background: radial-gradient(ellipse at 12% 0%, #334126 0, transparent 34%),
+                  radial-gradient(ellipse at 95% 18%, #29251a 0, transparent 30%), var(--bg);
+      padding: max(15px, env(safe-area-inset-top)) 16px calc(104px + env(safe-area-inset-bottom));
+    }
+    button, input { font: inherit; }
+    button { color: inherit; }
+    .shell { width: min(100%, 760px); margin: 0 auto; }
+    .topbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:5px 2px 20px; }
+    .brand { display:flex; align-items:center; gap:11px; min-width:0; }
+    .brand-mark { width:44px; height:44px; display:grid; place-items:center; border-radius:15px; color:var(--lime); background:#c7f36b14; border:1px solid #c7f36b38; box-shadow:0 8px 25px #c7f36b12; }
+    .brand-mark svg { width:25px; height:25px; }
+    .brand-copy { min-width:0; }
+    .brand-copy strong { display:block; font-size:16px; letter-spacing:.04em; }
+    .brand-copy span { display:block; margin-top:2px; color:var(--muted); font-size:11px; }
+    .user-chip { display:flex; align-items:center; gap:7px; max-width:45%; border:1px solid var(--line); background:#ffffff08; border-radius:99px; padding:8px 11px; color:var(--muted); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    .live-dot { width:7px; height:7px; border-radius:50%; background:var(--lime); box-shadow:0 0 12px #c7f36b99; flex:none; }
+    .eyebrow { color:var(--lime); font-size:11px; font-weight:750; letter-spacing:.1em; }
+    .hero { position:relative; overflow:hidden; border:1px solid #c7f36b2b; border-radius:30px; padding:25px 22px 21px; background:linear-gradient(145deg,#242d1f 0%,#1a2118 52%,#171c16 100%); box-shadow:var(--shadow); }
+    .hero::after { content:""; position:absolute; inset:auto -35px -85px auto; width:210px; height:210px; border:1px solid #c7f36b22; border-radius:50%; box-shadow:0 0 0 22px #c7f36b09,0 0 0 45px #c7f36b06; pointer-events:none; }
+    .hero h1 { position:relative; z-index:1; margin:11px 0 8px; max-width:520px; font-size:clamp(25px,7vw,38px); line-height:1.18; letter-spacing:-.04em; }
+    .hero h1 em { color:var(--lime); font-style:normal; }
+    .hero p { position:relative; z-index:1; color:#bac4b2; margin:0; line-height:1.75; max-width:480px; font-size:14px; }
+    .hero-meta { display:flex; align-items:center; gap:8px; margin-top:18px; color:var(--muted); font-size:11px; }
+    .hero-meta .pill { border:1px solid #ffffff17; background:#ffffff08; padding:6px 9px; border-radius:99px; }
+    .search-card { position:relative; z-index:2; margin-top:17px; border:1px solid #3a4734; border-radius:21px; background:#11150f; padding:9px; }
+    .input-row { display:flex; align-items:center; gap:8px; }
+    .at-sign { color:var(--lime); font-size:18px; font-weight:800; padding-inline:8px 2px; }
+    .search-input { width:100%; min-width:0; border:0; outline:0; background:transparent; color:var(--text); padding:12px 4px; font-size:16px; direction:ltr; text-align:left; }
+    .search-input::placeholder { color:#778170; }
+    .search-btn,.soft-btn,.outline-btn,.icon-btn { border:0; cursor:pointer; transition:transform .16s ease,filter .16s ease,background .16s ease; }
+    .search-btn:active,.soft-btn:active,.outline-btn:active,.icon-btn:active,.nav-btn:active { transform:scale(.97); }
+    .search-btn { flex:none; border-radius:14px; padding:12px 15px; background:var(--lime); color:var(--lime-ink); font-weight:850; font-size:13px; }
+    .search-btn:disabled { opacity:.6; cursor:wait; }
+    .hint { margin:9px 4px 0; font-size:11px; color:var(--faint); line-height:1.6; }
+    .section-head { display:flex; align-items:end; justify-content:space-between; gap:10px; margin:28px 2px 12px; }
+    .section-head h2 { margin:0; font-size:17px; }
+    .section-head span { color:var(--faint); font-size:11px; }
+    .quick-stats { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+    .stat-tile { border:1px solid var(--line); border-radius:19px; background:linear-gradient(145deg,#1c231b,#171c16); padding:15px; min-height:91px; }
+    .stat-top { display:flex; justify-content:space-between; align-items:center; color:var(--muted); font-size:11px; }
+    .stat-icon { width:26px; height:26px; display:grid; place-items:center; background:#c7f36b15; color:var(--lime); border-radius:9px; }
+    .stat-num { display:block; font-weight:850; font-size:23px; margin-top:8px; letter-spacing:-.03em; }
+    .result { margin-top:18px; }
+    .profile-card { overflow:hidden; border:1px solid var(--line); border-radius:25px; background:linear-gradient(155deg,#1d241b,#171c16); box-shadow:0 18px 50px #0003; }
+    .profile-cover { height:76px; background:linear-gradient(110deg,#637d35,#293a26 62%,#25291d); position:relative; }
+    .profile-cover::after { content:""; position:absolute; inset:0; background:repeating-linear-gradient(135deg,transparent 0 15px,#fff1 15px 16px); opacity:.22; }
+    .profile-main { padding:0 18px 18px; }
+    .profile-head { display:flex; align-items:end; gap:12px; margin-top:-31px; position:relative; z-index:1; }
+    .avatar { width:68px; height:68px; border-radius:23px; border:4px solid var(--surface); background:var(--lime); color:#26351b; display:grid; place-items:center; font-weight:900; font-size:23px; overflow:hidden; flex:none; }
+    .avatar img { width:100%; height:100%; object-fit:cover; }
+    .identity { min-width:0; flex:1; padding-bottom:4px; }
+    .identity strong { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:17px; }
+    .identity span { display:block; direction:ltr; text-align:right; color:var(--muted); font-size:12px; margin-top:2px; }
+    .verified { display:inline-flex!important; width:max-content; color:var(--lime)!important; background:#c7f36b18; border-radius:99px; padding:3px 7px; margin-top:6px!important; font-size:10px!important; }
+    .profile-actions { display:flex; gap:8px; margin:16px 0; }
+    .soft-btn,.outline-btn { display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:42px; border-radius:13px; padding:10px 12px; font-size:12px; font-weight:750; }
+    .soft-btn { background:var(--lime); color:var(--lime-ink); }
+    .outline-btn { flex:1; background:#ffffff07; border:1px solid var(--line); color:var(--text); }
+    .metric-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; }
+    .metric { padding:12px 5px; border:1px solid #ffffff10; background:#ffffff05; border-radius:15px; text-align:center; min-width:0; }
+    .metric b { display:block; font-size:15px; overflow:hidden; text-overflow:ellipsis; }
+    .metric span { display:block; color:var(--faint); font-size:10px; margin-top:4px; }
+    .bio { color:#c4ccbd; font-size:13px; line-height:1.7; white-space:pre-wrap; overflow-wrap:anywhere; margin:15px 1px 0; }
+    .profile-details { display:flex; flex-wrap:wrap; gap:7px; margin-top:13px; }
+    .detail-chip { border:1px solid var(--line); background:#ffffff06; color:var(--muted); border-radius:99px; padding:6px 9px; font-size:10px; }
+    .notice { border:1px solid #c7f36b28; color:#bcc8b1; background:#c7f36b09; border-radius:16px; padding:12px 13px; line-height:1.7; font-size:11px; margin-top:13px; }
+    .list { display:grid; gap:9px; }
+    .list-item { display:flex; align-items:center; gap:11px; border:1px solid var(--line); background:var(--surface); border-radius:17px; padding:12px; }
+    .list-avatar { width:42px; height:42px; border-radius:14px; display:grid; place-items:center; background:#c7f36b18; color:var(--lime); font-weight:900; flex:none; }
+    .list-copy { min-width:0; flex:1; }
+    .list-copy b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; }
+    .list-copy span { display:block; color:var(--muted); font-size:11px; margin-top:3px; }
+    .icon-btn { flex:none; background:#ffffff08; border:1px solid var(--line); border-radius:12px; padding:9px 11px; color:var(--muted); }
+    .empty { border:1px dashed #465140; border-radius:19px; padding:23px 17px; text-align:center; color:var(--muted); line-height:1.8; font-size:13px; }
+    .empty b { display:block; color:var(--text); font-size:14px; margin-bottom:4px; }
+    .history { margin-top:15px; border:1px solid var(--line); border-radius:19px; overflow:hidden; }
+    .history-title { padding:13px 14px; font-size:12px; color:var(--muted); background:#ffffff04; border-bottom:1px solid var(--line); }
+    .history-row { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; border-bottom:1px solid #ffffff09; font-size:12px; }
+    .history-row:last-child { border-bottom:0; }
+    .history-row code { direction:ltr; color:var(--lime); font-family:inherit; }
+    .screen { display:none; animation:rise .24s ease both; }
+    .screen.active { display:block; }
+    @keyframes rise { from { opacity:0; transform:translateY(7px); } to { opacity:1; transform:none; } }
+    .screen-title { margin:12px 1px 17px; }
+    .screen-title .eyebrow { margin-bottom:8px; }
+    .screen-title h1 { margin:0; font-size:26px; letter-spacing:-.03em; }
+    .screen-title p { margin:6px 0 0; color:var(--muted); line-height:1.7; font-size:13px; }
+    .stats-banner { border:1px solid #c7f36b35; border-radius:22px; padding:18px; background:linear-gradient(135deg,#394b2b,#1a2117 70%); margin-bottom:13px; }
+    .stats-banner span { color:#d0dbbe; font-size:12px; }
+    .stats-banner strong { display:block; font-size:36px; margin-top:4px; color:var(--lime); }
+    .bottom-nav { position:fixed; z-index:10; bottom:calc(10px + env(safe-area-inset-bottom)); left:50%; transform:translateX(-50%); width:min(calc(100% - 24px),520px); display:grid; grid-template-columns:repeat(3,1fr); gap:5px; border:1px solid #ffffff17; border-radius:21px; padding:7px; background:#171c16ed; backdrop-filter:blur(18px); box-shadow:0 13px 45px #0008; }
+    .nav-btn { border:0; background:transparent; border-radius:15px; color:var(--muted); padding:9px 4px 8px; font-size:10px; cursor:pointer; transition:.16s ease; }
+    .nav-btn .nav-icon { display:block; font-size:17px; margin-bottom:3px; }
+    .nav-btn.active { color:var(--lime); background:#c7f36b13; font-weight:800; }
+    .toast { position:fixed; z-index:20; top:calc(12px + env(safe-area-inset-top)); left:50%; transform:translate(-50%,-12px); opacity:0; pointer-events:none; width:min(calc(100% - 32px),480px); padding:12px 15px; border-radius:15px; background:#2a3326; border:1px solid #526342; color:var(--text); box-shadow:var(--shadow); text-align:center; font-size:12px; transition:.22s ease; }
+    .toast.show { opacity:1; transform:translate(-50%,0); }
+    .toast.error { border-color:#9d544d; background:#351f1c; }
+    .loading { color:var(--muted); border:1px dashed var(--line); border-radius:17px; padding:19px; text-align:center; font-size:12px; }
+    .footnote { text-align:center; color:var(--faint); font-size:10px; margin:22px 3px 0; line-height:1.7; }
+    @media (min-width:650px) { body { padding-left:24px; padding-right:24px; } .hero { padding:32px; } .quick-stats { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+    @media (max-width:380px) { body { padding-left:12px; padding-right:12px; } .hero { padding:21px 16px 17px; } .search-btn { padding:11px 10px; } .metric-grid { gap:5px; } .metric b { font-size:13px; } }
+    @media (prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; animation-duration:.01ms!important; transition-duration:.01ms!important; } }
   </style>
 </head>
-<body><main>
-  <header class="brand"><div class="logo">♪</div><div><h1>BX TikTok Info</h1><p>أدوات بسيطة لمعلومات الحساب العامة</p></div></header>
-  <section class="card"><span class="tag">✨ Mini App داخل تيليجرام</span><h2>افحص حساب تيك توك</h2><p>أدخل اسم مستخدم عام لعرض المعلومات المتاحة. لا تدخل كلمة مرورك أو أي بيانات تسجيل دخول.</p>
-    <div class="features"><div class="feature"><b>📊 إحصائيات</b>الأرقام العامة المتاحة</div><div class="feature"><b>📄 تقرير</b>إمكانية تنزيل TXT من البوت</div></div>
-    <form id="form"><label for="username">اسم المستخدم</label><input id="username" name="username" maxlength="30" autocomplete="off" placeholder="مثال: tiktok" aria-describedby="hint error"><div id="hint" class="hint">اكتب الاسم فقط، مع أو بدون @. لا تلصق رابطًا.</div><button id="submit" class="btn" type="submit">🔎 إرسال للفحص</button><div id="error" class="error" role="alert"></div></form>
-    <p class="privacy">🔐 تُرسل قيمة اسم المستخدم إلى بوت تيليجرام لتنفيذ طلبك. المعلومات تأتي من خدمة بيانات خارجية وقد لا تكون دقيقة أو متاحة دائمًا.</p>
-  </section><div class="foot">BXCODE · استخدم الخدمة باحترام وضمن القوانين وشروط المنصة.</div>
-</main>
-<script>
-(() => {
-  const tg = window.Telegram?.WebApp;
-  if (tg) { tg.ready(); tg.expand(); }
-  const form = document.querySelector('#form'), input = document.querySelector('#username'), err = document.querySelector('#error'), submit = document.querySelector('#submit');
-  form.addEventListener('submit', (event) => {
-    event.preventDefault(); err.textContent = '';
-    const username = input.value.trim().replace(/^@+/, '');
-    if (!/^[A-Za-z0-9._]{2,30}$/.test(username)) { err.textContent = 'تأكد من الاسم: من 2 إلى 30 حرفًا/رقمًا أو نقطة أو شرطة سفلية.'; input.focus(); return; }
-    if (!tg || !tg.initData) { err.textContent = 'افتح هذه الصفحة من زر Mini App داخل بوت تيليجرام.'; return; }
-    submit.disabled = true; submit.textContent = '⏳ جارٍ الإرسال…';
-    tg.sendData(JSON.stringify({username}));
-    setTimeout(() => tg.close(), 250);
-  });
-})();
-</script></body></html>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 28 28" fill="none"><path d="M5 21V7h7.2c3.1 0 4.8 1.4 4.8 3.7 0 1.7-1 2.8-2.6 3.3 2.2.4 3.6 1.7 3.6 3.7 0 2.8-2 4.3-5.5 4.3H5Z" stroke="currentColor" stroke-width="2.6" stroke-linejoin="round"/><path d="M21 8v12M24 11v6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></div>
+        <div class="brand-copy"><strong>BX <span style="color:var(--lime)">/</span> TIKTOK</strong><span>مساحة الحساب · إصدار تيليجرام</span></div>
+      </div>
+      <div class="user-chip"><i class="live-dot"></i><span id="hello">متصل بتيليجرام</span></div>
+    </header>
+
+    <section class="screen active" id="screen-home" data-screen="home">
+      <section class="hero">
+        <div class="eyebrow">BX SIGNAL · 01</div>
+        <h1>المعلومة العامة،<br><em>بشكل أوضح.</em></h1>
+        <p>ابحث عن حساب تيك توك عام، راجع أرقامه، وخلي الحسابات اللي تهمك قريبة منك.</p>
+        <div class="hero-meta"><span class="pill">🔒 من داخل تيليجرام</span><span>بدون كلمة مرور</span></div>
+        <form class="search-card" id="lookup-form">
+          <div class="input-row"><span class="at-sign">@</span><input class="search-input" id="username" maxlength="30" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="اسم المستخدم" aria-label="اسم مستخدم تيك توك"><button class="search-btn" id="search-button" type="submit">افحص الحساب</button></div>
+          <div class="hint">اكتب اليوزر فقط. نعرض البيانات العامة اللي ترجع من المصدر.</div>
+        </form>
+      </section>
+
+      <div class="section-head"><h2>مساحتك</h2><span>معلومات تخص حسابك بتيليجرام</span></div>
+      <div class="quick-stats">
+        <article class="stat-tile"><div class="stat-top"><span>عمليات البحث</span><span class="stat-icon">⌕</span></div><strong class="stat-num" id="quick-searches">—</strong></article>
+        <article class="stat-tile"><div class="stat-top"><span>حسابات بالمفضلة</span><span class="stat-icon">☆</span></div><strong class="stat-num" id="quick-favorites">—</strong></article>
+      </div>
+
+      <div id="result" class="result" aria-live="polite"></div>
+      <div class="footnote">🔐 نتحقق من جلسة Telegram قبل أي طلب. لا نطلب ولا نخزن كلمة مرور تيك توك.</div>
+    </section>
+
+    <section class="screen" id="screen-favorites" data-screen="favorites">
+      <div class="screen-title"><div class="eyebrow">مكتبتك</div><h1>المفضلة</h1><p>حسابات حفظتها من البوت أو من هالتطبيق.</p></div>
+      <div id="favorites-list" class="list"><div class="loading">دا أحمّل قائمتك…</div></div>
+    </section>
+
+    <section class="screen" id="screen-stats" data-screen="stats">
+      <div class="screen-title"><div class="eyebrow">لوحة خاصة بيك</div><h1>إحصائياتك</h1><p>ملخص نشاطك وسجل آخر عمليات البحث.</p></div>
+      <div class="stats-banner"><span>كل عمليات البحث</span><strong id="total-searches">—</strong></div>
+      <div class="quick-stats">
+        <article class="stat-tile"><div class="stat-top"><span>المفضلة</span><span class="stat-icon">☆</span></div><strong class="stat-num" id="total-favorites">—</strong></article>
+        <article class="stat-tile"><div class="stat-top"><span>آخر بحث</span><span class="stat-icon">↻</span></div><strong class="stat-num" id="last-search" style="font-size:14px;direction:ltr">—</strong></article>
+      </div>
+      <div class="history"><div class="history-title">آخر الحسابات اللي بحثت عنها</div><div id="history-list"></div></div>
+    </section>
+  </div>
+
+  <nav class="bottom-nav" aria-label="التنقل الرئيسي">
+    <button class="nav-btn active" data-go="home"><span class="nav-icon">⌕</span>بحث</button>
+    <button class="nav-btn" data-go="favorites"><span class="nav-icon">☆</span>المفضلة</button>
+    <button class="nav-btn" data-go="stats"><span class="nav-icon">▥</span>إحصائياتي</button>
+  </nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script>
+  (() => {
+    'use strict';
+    const tg = window.Telegram?.WebApp;
+    const initData = tg?.initData || '';
+    const $ = (selector, root=document) => root.querySelector(selector);
+    const $$ = (selector, root=document) => [...root.querySelectorAll(selector)];
+    const form = $('#lookup-form');
+    const input = $('#username');
+    const searchButton = $('#search-button');
+    const resultRoot = $('#result');
+    const toast = $('#toast');
+    let currentProfile = null;
+    let activeScreen = 'home';
+    let toastTimer;
+
+    if (tg) {
+      tg.ready();
+      tg.expand();
+      tg.setHeaderColor?.('#10130f');
+      tg.setBackgroundColor?.('#10130f');
+      const firstName = tg.initDataUnsafe?.user?.first_name;
+      if (firstName) $('#hello').textContent = `هلا ${firstName}`;
+      tg.BackButton?.onClick(() => navigate('home'));
+      tg.MainButton?.setText('افحص الحساب');
+      tg.MainButton?.onClick(() => {
+        if (activeScreen !== 'home') return;
+        if (currentProfile && !input.value.trim()) {
+          currentProfile = null; resultRoot.replaceChildren(); input.focus();
+          tg.MainButton.setText('افحص الحساب');
+          return;
+        }
+        form.requestSubmit();
+      });
+      tg.MainButton?.show();
+      tg.onEvent?.('themeChanged', () => {
+        if (tg.colorScheme === 'light') document.documentElement.style.colorScheme = 'dark';
+      });
+    }
+
+    function haptic(kind='light') { try { tg?.HapticFeedback?.impactOccurred(kind); } catch (_) {} }
+    function showToast(message, isError=false) {
+      toast.textContent = message;
+      toast.classList.toggle('error', isError);
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 3000);
+    }
+    function navigate(screen) {
+      activeScreen = screen;
+      $$('.screen').forEach(node => node.classList.toggle('active', node.dataset.screen === screen));
+      $$('.nav-btn').forEach(node => node.classList.toggle('active', node.dataset.go === screen));
+      if (screen === 'favorites') loadFavorites();
+      if (screen === 'stats') loadStats();
+      if (tg?.BackButton) screen === 'home' ? tg.BackButton.hide() : tg.BackButton.show();
+      if (tg?.MainButton) screen === 'home' ? tg.MainButton.show() : tg.MainButton.hide();
+      haptic('soft');
+      window.scrollTo({top:0,behavior:'smooth'});
+    }
+    async function api(path, options={}) {
+      if (!initData) throw new Error('افتح Mini App من زر البوت داخل تيليجرام حتى نتحقق من حسابك.');
+      const headers = {'Authorization': `tma ${initData}`, ...(options.body ? {'Content-Type':'application/json'} : {}), ...(options.headers||{})};
+      const response = await fetch(path, {...options, headers, cache:'no-store'});
+      let body = {};
+      try { body = await response.json(); } catch (_) {}
+      if (!response.ok) {
+        if (response.status === 403 && body.subscribe_url && tg?.openLink) tg.openLink(body.subscribe_url);
+        throw new Error(body.error || 'صار خلل مؤقت. جرّب مرة ثانية.');
+      }
+      return body;
+    }
+    function formatCount(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number)) return String(value ?? '0');
+      return new Intl.NumberFormat('ar-IQ',{notation:number >= 10000 ? 'compact' : 'standard',maximumFractionDigits:1}).format(number);
+    }
+    function setBusy(busy) {
+      searchButton.disabled = busy;
+      searchButton.textContent = busy ? 'لحظة…' : 'افحص الحساب';
+      if (tg?.MainButton) busy ? tg.MainButton.showProgress(false) : tg.MainButton.hideProgress();
+    }
+    function node(tag, className, text) {
+      const element = document.createElement(tag);
+      if (className) element.className = className;
+      if (text !== undefined) element.textContent = text;
+      return element;
+    }
+    function renderProfile(profile) {
+      currentProfile = profile;
+      resultRoot.replaceChildren();
+      const card = node('article','profile-card');
+      card.append(node('div','profile-cover'));
+      const main = node('div','profile-main');
+      const header = node('div','profile-head');
+      const initial = (profile.fullname || profile.username || 'BX').trim().slice(0,1).toUpperCase();
+      const avatar = node('div','avatar', initial);
+      if (profile.avatar) {
+        const image = document.createElement('img'); image.src = profile.avatar; image.alt = ''; image.referrerPolicy = 'no-referrer';
+        image.onerror = () => { avatar.textContent = initial; }; avatar.replaceChildren(image);
+      }
+      header.append(avatar);
+      const identity = node('div','identity');
+      identity.append(node('strong','',profile.fullname || profile.username));
+      identity.append(node('span','',`@${profile.username}`));
+      if (profile.verified === 'موثق') identity.append(node('span','verified','✓ حساب موثق'));
+      header.append(identity); main.append(header);
+      const actions = node('div','profile-actions');
+      const favorite = node('button','soft-btn',profile.is_favorite ? '★ محفوظة' : '☆ أضف للمفضلة');
+      favorite.type='button'; favorite.addEventListener('click', () => toggleFavorite(favorite));
+      const open = node('button','outline-btn','↗ افتح الحساب'); open.type='button';
+      open.addEventListener('click',() => tg?.openLink ? tg.openLink(profile.profile_url) : window.open(profile.profile_url,'_blank','noopener'));
+      actions.append(favorite,open); main.append(actions);
+      const metrics = node('div','metric-grid');
+      [['المتابعين',profile.followers],['يتابع',profile.following],['اللايكات',profile.likes],['الفيديوهات',profile.videos]].forEach(([label,value])=>{
+        const item=node('div','metric'); item.append(node('b','',formatCount(value)),node('span','',label)); metrics.append(item);
+      });
+      main.append(metrics);
+      if (profile.bio) main.append(node('p','bio',profile.bio));
+      const details=node('div','profile-details');
+      if (profile.privacy && profile.privacy !== 'ماكو') details.append(node('span','detail-chip',`الحساب · ${profile.privacy}`));
+      if (profile.region) details.append(node('span','detail-chip',`المنطقة · ${profile.region}`));
+      if (profile.language) details.append(node('span','detail-chip',`اللغة · ${profile.language}`));
+      if (profile.userid) details.append(node('span','detail-chip',`ID · ${profile.userid}`));
+      if (details.childElementCount) main.append(details);
+      main.append(node('div','notice','النتيجة تعرض معلومات عامة رجعتها خدمة البيانات. ما نعرض بريد أو رقم هاتف أو وسائل استعادة الحساب.'));
+      card.append(main); resultRoot.append(card);
+      haptic('success');
+      card.scrollIntoView({behavior:'smooth',block:'start'});
+      if (tg?.MainButton) tg.MainButton.setText('ابحث عن حساب ثاني');
+    }
+    async function lookup(event) {
+      event?.preventDefault();
+      const username = input.value.trim().replace(/^@+/, '');
+      if (!/^[A-Za-z0-9._]{2,30}$/.test(username)) { showToast('اكتب يوزر من 2 إلى 30 حرف، بدون رابط.',true); input.focus(); return; }
+      setBusy(true);
+      try {
+        const result = await api('/api/lookup',{method:'POST',body:JSON.stringify({username})});
+        renderProfile(result.profile);
+        input.value = '';
+        await loadStats();
+        if (activeScreen !== 'home') navigate('home');
+      } catch (error) { showToast(error.message,true); haptic('error'); }
+      finally { setBusy(false); }
+    }
+    async function toggleFavorite(button) {
+      if (!currentProfile) return;
+      button.disabled=true;
+      try {
+        const method=currentProfile.is_favorite?'DELETE':'POST';
+        const path=method==='POST'?'/api/favorites':`/api/favorites/${encodeURIComponent(currentProfile.username)}`;
+        await api(path,{method,...(method==='POST'?{body:JSON.stringify({username:currentProfile.username})}:{})});
+        currentProfile.is_favorite=!currentProfile.is_favorite;
+        button.textContent=currentProfile.is_favorite?'★ محفوظة':'☆ أضف للمفضلة';
+        showToast(currentProfile.is_favorite?'انضاف الحساب للمفضلة.':'انحذف من المفضلة.');
+        haptic('success'); await loadStats();
+      } catch(error) { showToast(error.message,true); }
+      finally { button.disabled=false; }
+    }
+    async function loadFavorites() {
+      const root=$('#favorites-list'); root.replaceChildren(node('div','loading','دا أحمّل قائمتك…'));
+      try {
+        const result=await api('/api/favorites'); root.replaceChildren();
+        if (!result.favorites.length) {
+          const empty=node('div','empty'); empty.append(node('b','','بعدها فاضية'),node('span','','من نتيجة البحث دوس «أضف للمفضلة» حتى تلگاها هنا.')); root.append(empty); return;
+        }
+        result.favorites.forEach(item=>{
+          const row=node('article','list-item'); row.append(node('div','list-avatar',(item.display_name||item.username).slice(0,1).toUpperCase()));
+          const copy=node('div','list-copy'); copy.append(node('b','',item.display_name||`@${item.username}`),node('span','',`@${item.username}`)); row.append(copy);
+          const open=node('button','icon-btn','فتح'); open.type='button'; open.setAttribute('aria-label',`افتح حساب ${item.username}`);
+          open.addEventListener('click',()=>{input.value=item.username;navigate('home');form.requestSubmit();}); row.append(open); root.append(row);
+        });
+      } catch(error) { root.replaceChildren(node('div','empty',error.message)); }
+    }
+    async function loadStats() {
+      try {
+        const stats=await api('/api/stats');
+        $('#quick-searches').textContent=formatCount(stats.searches);
+        $('#quick-favorites').textContent=formatCount(stats.favorites);
+        $('#total-searches').textContent=formatCount(stats.searches);
+        $('#total-favorites').textContent=formatCount(stats.favorites);
+        const last=stats.recent?.[0] || '—'; $('#last-search').textContent=last==='—'?'—':`@${last}`;
+        const history=$('#history-list'); history.replaceChildren();
+        if (!stats.recent?.length) { history.append(node('div','history-row','لحد هسه ماكو بحوث.')); return; }
+        stats.recent.forEach((username,index)=>{
+          const row=node('div','history-row'); row.append(node('span','',`${index+1}.`),node('code','',`@${username}`));
+          const open=node('button','icon-btn','بحث'); open.type='button'; open.addEventListener('click',()=>{input.value=username;navigate('home');form.requestSubmit();}); row.append(open); history.append(row);
+        });
+      } catch(error) {
+        $('#quick-searches').textContent='—'; $('#quick-favorites').textContent='—';
+        if (error.message && !error.message.includes('افتح Mini App')) showToast(error.message,true);
+      }
+    }
+    form.addEventListener('submit',lookup);
+    $$('.nav-btn').forEach(button=>button.addEventListener('click',()=>navigate(button.dataset.go)));
+    if (!initData) showToast('افتح التطبيق من داخل البوت حتى تشتغل ميزات حسابك.',true);
+    else loadStats();
+    if (tg?.MainButton) tg.MainButton.hideProgress();
+  })();
+  </script>
+</body>
+</html>

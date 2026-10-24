@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import hmac
 import html
 import json
 import logging
@@ -7,10 +9,12 @@ import re
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit
+from types import SimpleNamespace
+from urllib.parse import parse_qsl, urlsplit
 
 import aiohttp
 import aiosqlite
+from aiohttp import web
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -32,7 +36,6 @@ CHANNEL = os.getenv("REQUIRED_CHANNEL", "@bxcode").strip()
 CHANNEL_URL = os.getenv("CHANNEL_URL", "https://t.me/bxcode").strip()
 MINI_APP_URL = os.getenv("MINI_APP_URL", "").strip()
 API_URL = os.getenv("TIKTOK_API_URL", "https://tiktokinfov10.itfreeforever.workers.dev").strip()
-CLIPX_API_URL = "https://clipx.zamdev.workers.dev/"
 DB_PATH = os.getenv("DATABASE_PATH", "bx_tiktok.sqlite3")
 BOT_NAME = os.getenv("BOT_NAME", "BX TikTok Info")
 if not BOT_TOKEN:
@@ -49,20 +52,12 @@ LOOKUP_COOLDOWN = 3
 pending_actions: dict[int, tuple[int, Message, str]] = {}
 last_lookup: dict[int, float] = {}
 active_lookups: set[int] = set()
-pending_downloads: dict[int, tuple[int, Message, str]] = {}
 bot: Bot
+WEBAPP_AUTH_MAX_AGE = 24 * 60 * 60
 
 
 def button(text: str, callback_data: str | None = None, *, url: str | None = None,
            web_app: WebAppInfo | None = None, style: str | None = None) -> InlineKeyboardButton:
-    if style is None:
-        lowered = text.casefold()
-        if any(word in lowered for word in ("إلغاء", "حذف", "إزالة", "🗑", "❌")):
-            style = "danger"
-        elif any(word in lowered for word in ("⭐", "⬇️", "✅", "إضافة", "أفضل جودة")):
-            style = "success"
-        else:
-            style = "primary"
     args = {"text": text}
     if callback_data is not None:
         args["callback_data"] = callback_data
@@ -83,7 +78,6 @@ def home_keyboard() -> InlineKeyboardMarkup:
     rows = [
         [button("🔎 بحث", "search", style="primary"), button("⭐ المفضلة", "favorites", style="success")],
         [button("🔴 إحصائياتي", "mystats", style="danger"), button("📖 شرح البوت", "help", style="primary")],
-        [button("🔎 كشف الرابط", "link_info", style="primary"), button("⬇️ تحميل مقاطع", "download", style="success")],
     ]
     if MINI_APP_URL.startswith("https://"):
         rows.append([button("✨ افتح Mini App", web_app=WebAppInfo(url=MINI_APP_URL), style="success")])
@@ -116,53 +110,6 @@ def profile_keyboard(username: str, is_favorite: bool = False) -> InlineKeyboard
 
 def pending_keyboard() -> InlineKeyboardMarkup:
     return back_keyboard("cancel", "إلغاء والرجوع")
-
-
-def download_quality_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [button("🎬 أفضل جودة", "dl:best", style="success")],
-        [button("📺 HD", "dl:hd", style="primary")],
-        [button("📱 جودة عادية", "dl:sd", style="primary")],
-        [button("❌ إلغاء", "download_cancel", style="danger")],
-    ])
-
-
-def normalize_tiktok_url(raw: str) -> str:
-    value = (raw or "").strip()
-    if not value:
-        raise ValueError("دز رابط مقطع تيك توك حتى أكمل.")
-    if not value.startswith(("https://", "http://")):
-        value = "https://" + value
-    parsed = urlsplit(value)
-    host = (parsed.hostname or "").casefold().rstrip(".")
-    if (parsed.scheme != "https" or not host or
-            not (host == "tiktok.com" or host.endswith(".tiktok.com")) or
-            parsed.username or parsed.password or parsed.port not in (None, 443) or
-            not parsed.path or parsed.path == "/"):
-        raise ValueError("هذا مو رابط تيك توك عام وصحيح. دز رابط المقطع أو الرابط المختصر.")
-    return value
-
-
-def select_video_url(data: dict, quality: str) -> str:
-    video = data.get("video")
-    if not isinstance(video, dict):
-        if data.get("images"):
-            raise ValueError("هذا المنشور صور مو مقطع فيديو.")
-        raise ValueError("ما لگيت رابط فيديو صالح بهالمنشور.")
-    keys = {
-        "best": ("hd_mp4", "standard_mp4", "wmplay"),
-        "hd": ("hd_mp4",),
-        "sd": ("standard_mp4", "wmplay"),
-    }.get(quality)
-    if not keys:
-        raise ValueError("خيار الجودة مو معروف.")
-    for key in keys:
-        candidate = video.get(key)
-        if isinstance(candidate, str) and candidate.startswith("https://"):
-            parsed = urlsplit(candidate)
-            if parsed.hostname and not parsed.username and not parsed.password:
-                return candidate
-    raise ValueError("الخدمة ما رجّعت رابط بهالجودة. جرّب جودة ثانية.")
 
 
 async def init_db() -> None:
@@ -350,11 +297,6 @@ def format_profile(data: dict, username: str) -> str:
     if extras:
         lines.extend(["", "<b>معلومات إضافية</b>"])
         lines.extend(f"• <b>{_safe_html(label)}:</b> {_safe_html(value, 350)}" for label, value in extras)
-    lines.extend([
-        "",
-        "<b>🔗 الربط -</b>",
-        "مصدر الفحص ما يرجّع معلومات موثوقة عن البريد أو الهاتف أو وسائل الاستعادة، فما نخمّنها.",
-    ])
     return "\n".join(lines)
 
 
@@ -455,70 +397,14 @@ async def send_document(chat_id: int, data: dict, username: str) -> None:
                             caption="📄 معلومات الحساب بملف TXT")
 
 
-async def fetch_clipx_video(url: str, quality: str) -> tuple[str, dict]:
-    timeout = aiohttp.ClientTimeout(total=60, connect=10)
-    async with aiohttp.ClientSession(timeout=timeout) as session:
-        async with session.get(CLIPX_API_URL, params={"url": url, "quality": quality}) as response:
-            if response.status == 429:
-                raise RuntimeError("خدمة التنزيل وصلت حد الطلبات هسه. جرّب بعد دقيقة.")
-            response.raise_for_status()
-            result = await response.json(content_type=None)
-    if not isinstance(result, dict) or result.get("success") is not True:
-        raise ValueError("ما گدرت أجيب المقطع. يمكن الرابط غلط أو الفيديو خاص/محذوف.")
-    data = result.get("data")
-    if not isinstance(data, dict):
-        raise ValueError("خدمة التنزيل رجّعت نتيجة فارغة. جرّب بعدين.")
-    return select_video_url(data, quality), data
-
-
-async def deliver_clip(chat_id: int, message: Message, url: str, quality: str) -> None:
-    labels = {"best": "أفضل جودة", "hd": "HD", "sd": "عادية"}
-    await edit_message(message, "⏳ دا أجهّز المقطع، انتظر شوي…")
-    try:
-        video_url, data = await fetch_clipx_video(url, quality)
-        title = _safe_html(data.get("title") or "مقطع تيك توك", 180)
-        author = data.get("author") if isinstance(data.get("author"), dict) else {}
-        nickname = _safe_html(author.get("nickname") or author.get("username") or "", 60)
-        caption = f"🎬 <b>{title}</b>\n⚙️ الجودة: {labels[quality]}"
-        if nickname:
-            caption += f"\n👤 {nickname}"
-        try:
-            await bot.send_video(chat_id, video=video_url, caption=caption)
-        except Exception:
-            log.exception("Telegram could not send ClipX video URL")
-            markup = InlineKeyboardMarkup(inline_keyboard=[
-                [button("⬇️ افتح رابط التنزيل", url=video_url, style="success")],
-                [button("🏠 القائمة الرئيسية", "home", style="primary")],
-            ])
-            await edit_message(
-                message,
-                f"ما گدرت أبعثه كفيديو من تيليجرام. هذا رابط التنزيل المباشر:\n<a href=\"{html.escape(video_url, quote=True)}\">اضغط هنا للتنزيل</a>",
-                markup,
-            )
-        else:
-            await edit_message(message, "✅ دزّيتلك المقطع.", home_keyboard())
-    except asyncio.TimeoutError:
-        await edit_message(message, "⌛ خدمة ClipX طولت بالرد. جرّب بعدين.", home_keyboard())
-    except RuntimeError as exc:
-        await edit_message(message, html.escape(str(exc)), home_keyboard())
-    except ValueError as exc:
-        await edit_message(message, html.escape(str(exc)), home_keyboard())
-    except aiohttp.ClientError:
-        log.exception("ClipX request failed")
-        await edit_message(message, "ما گدرت أوصل لخدمة التنزيل هسه. جرّب بعدين.", home_keyboard())
-    except Exception:
-        log.exception("Unexpected ClipX download failure")
-        await edit_message(message, "صار خلل بالتنزيل، بس باقي أقسام البوت شغالة. جرّب بعدين.", home_keyboard())
-
-
 async def send_profile(chat_id: int, user_id: int, username: str, *,
                        target_message: Message | None = None, count_search: bool = True) -> None:
     now = time.monotonic()
     if user_id in active_lookups:
         if target_message:
-            await edit_message(target_message, "⏳ بعدني أجيب معلومات الحساب، انتظر شوي.", pending_keyboard())
+            await edit_message(target_message, "⏳ بعدني أجيب معلومات الحساب، انتظر شوي حب.", pending_keyboard())
         else:
-            await bot.send_message(chat_id, "⏳ بعدني أجيب معلومات الحساب، انتظر شوي.")
+            await bot.send_message(chat_id, "⏳ بعدني أجيب معلومات الحساب، انتظر شوي حب.")
         return
     if count_search and now - last_lookup.get(user_id, 0) < LOOKUP_COOLDOWN:
         if target_message:
@@ -533,9 +419,9 @@ async def send_profile(chat_id: int, user_id: int, username: str, *,
     progress: Message | None = None
     try:
         if target_message is None:
-            progress = await bot.send_message(chat_id, "⏳ دا أجيب معلومات الحساب...")
+            progress = await bot.send_message(chat_id, "⏳ دا أجيب معلومات الحساب حب...")
         else:
-            await edit_message(target_message, "⏳ دا أجيب معلومات الحساب...", None)
+            await edit_message(target_message, "⏳ دا أجيب معلومات الحساب حب...", None)
         data = await fetch_profile(username)
         if count_search:
             await record_search(user_id, username)
@@ -573,16 +459,16 @@ async def send_profile(chat_id: int, user_id: int, username: str, *,
         except Exception:
             log.exception("Could not send TXT report for @%s", username)
     except (asyncio.TimeoutError, aiohttp.ServerTimeoutError):
-        await _show_lookup_error(chat_id, target_message, progress, "⌛ الخدمة طولت بالرد. جرّب بعدين.")
+        await _show_lookup_error(chat_id, target_message, progress, "⌛ الخدمة طولت بالرد، جرّب بعدين حب.")
     except aiohttp.ClientResponseError as exc:
-        message = "❌ ما لگيت الحساب أو خدمة المعلومات متوقفة هسه." if exc.status == 404 else "❌ صار خلل بخدمة المعلومات. جرّب بعدين."
+        message = "❌ ما لگيت الحساب أو خدمة المعلومات متوقفة هسه." if exc.status == 404 else "❌ صار خلل بخدمة المعلومات، جرّب بعدين حب."
         await _show_lookup_error(chat_id, target_message, progress, message)
     except aiohttp.ClientError:
         log.exception("Network error while looking up @%s", username)
-        await _show_lookup_error(chat_id, target_message, progress, "❌ ما گدرت أجيب المعلومات هسه. جرّب بعدين.")
+        await _show_lookup_error(chat_id, target_message, progress, "❌ ما گدرت أجيب المعلومات هسه، جرّب بعدين حب.")
     except Exception:
         log.exception("Profile lookup failed for @%s", username)
-        await _show_lookup_error(chat_id, target_message, progress, "❌ ما گدرت أجيب المعلومات هسه. جرّب بعدين.")
+        await _show_lookup_error(chat_id, target_message, progress, "❌ ما گدرت أجيب المعلومات هسه، جرّب بعدين حب.")
     finally:
         active_lookups.discard(user_id)
 
@@ -605,18 +491,18 @@ async def show_stats(message: Message, user_id: int) -> None:
         recent = await cursor.fetchall()
     search_count = user_row[0] if user_row else 0
     lines = [
-        "📊 هاي إحصائياتك",
-        f'⭐ المفضلات: "{favorites_count}"',
-        f'🔎 عدد البحوث: "{search_count}"',
-        "آخر 10 حسابات بحثت عنها:",
+        "هاك احصائياتك حب",
+        f'المفضلات مالاتك : "{favorites_count}"',
+        f'بحوثاتك كلهن : "{search_count}"',
+        "اخر 10 حسابات بحثت عليهم🫆:",
     ]
     if recent:
         quoted = [f"{index}. @{html.escape(row[0])}" for index, row in enumerate(recent, 1)]
         lines.append("<blockquote>🫆 آخر الحسابات اللي بحثت عنها\n" + "\n".join(quoted) + "</blockquote>")
     else:
-        lines.append("لحد هسه ما بحثت عن حساب. دوس بحث وجرب ❤️")
+        lines.append("بعدك ماباحث عن اي حساب حب، دوس بحث وجرب ❤️")
     if favorites_count == 0:
-        lines.extend(["", "قائمة المفضلة فارغة. تگدر تضيف حساب يعجبك ⭐"])
+        lines.extend(["", "مفضلاتك فارغة حب، ضيفلك حساب يعجبك ⭐"])
     await edit_message(message, "\n".join(lines), back_keyboard())
 
 
@@ -632,13 +518,13 @@ async def show_favorites(message: Message, user_id: int, page: int = 0, *, delet
         cursor = await db.execute("SELECT COUNT(*) FROM favorites WHERE user_id=?", (user_id,))
         total = (await cursor.fetchone())[0]
     if deleting:
-        title = "🗑 اختار الحساب اللي تريد تحذفه:"
+        title = "🗑 اختار المفضلة اللي تريد تحذفها حب:"
     else:
-        title = "⭐ حساباتك المفضلة:"
+        title = "⭐ مفضلاتك حب:"
     lines = [title]
     keyboard_rows = []
     if not rows:
-        lines.append("ما عندك حسابات بالمفضلة. ضيف واحد من نتائج البحث ⭐")
+        lines.append("ما عندك حسابات مفضلة حب، ضيفلك واحد ⭐")
     else:
         for username, display_name in rows:
             shown = f"@{username}"
@@ -668,27 +554,16 @@ async def show_favorites(message: Message, user_id: int, page: int = 0, *, delet
 
 
 async def _set_pending(message: Message, user_id: int, mode: str, text: str) -> None:
-    pending_downloads.pop(user_id, None)
     pending_actions[user_id] = (message.chat.id, message, mode)
     await edit_message(message, text, pending_keyboard())
 
 
 async def _handle_pending(message: Message, mode: str, target: Message) -> None:
     user_id = message.from_user.id
-    if mode == "download_url":
-        try:
-            video_url = normalize_tiktok_url(message.text or "")
-        except ValueError as exc:
-            await edit_message(target, f"❌ {html.escape(str(exc))}\nدز رابط تيك توك صحيح.", pending_keyboard())
-            return
-        pending_actions.pop(user_id, None)
-        pending_downloads[user_id] = (target.chat.id, target, video_url)
-        await edit_message(target, "اختار الجودة اللي تريدها:", download_quality_keyboard())
-        return
     try:
         username = normalize_username(message.text or "")
     except ValueError as exc:
-        await edit_message(target, f"❌ {html.escape(str(exc))}\n\nجرّب مرة ثانية.", pending_keyboard())
+        await edit_message(target, f"❌ {html.escape(str(exc))}\n\nجرّب مرة ثانية حب.", pending_keyboard())
         return
     await touch_user(message.from_user)
     if not await allowed(message):
@@ -701,7 +576,7 @@ async def _handle_pending(message: Message, mode: str, target: Message) -> None:
         data = await fetch_profile(username)
     except (asyncio.TimeoutError, aiohttp.ClientError, ValueError):
         log.exception("Could not verify favorite @%s", username)
-        await edit_message(target, "❌ ما گدرت أتأكد من الحساب هسه. جرّب بعدين.", pending_keyboard())
+        await edit_message(target, "❌ ما گدرت أتأكد من الحساب هسه. جرّب بعدين حب.", pending_keyboard())
         return
     name = str(raw_value(data, "fullname", "nickname") or "")
     async with aiosqlite.connect(DB_PATH) as db:
@@ -713,7 +588,7 @@ async def _handle_pending(message: Message, mode: str, target: Message) -> None:
                              (user_id, normalized_key(username), datetime.now(timezone.utc).isoformat(), name[:80]))
             await db.commit()
     pending_actions.pop(user_id, None)
-    text = "هالحساب موجود بالمفضلة من قبل ⭐" if exists else "انضاف للمفضلة ⭐"
+    text = "هالحساب موجود بالمفضلة من قبل حب ⭐" if exists else "تمت الإضافة للمفضلة حب ⭐"
     await edit_message(target, text, back_keyboard("favorites", "⭐ للمفضلة"))
 
 
@@ -722,7 +597,7 @@ async def start(message: Message) -> None:
     await touch_user(message.from_user)
     if not await allowed(message):
         return
-    await message.answer("هلا بيك، اختار شتريد من القائمة 👇", reply_markup=home_keyboard())
+    await message.answer("هلا بيك حب، اختار شتريد من القائمة 👇", reply_markup=home_keyboard())
 
 
 @router.message(Command("help"))
@@ -731,16 +606,16 @@ async def help_cmd(message: Message) -> None:
     if not await allowed(message):
         return
     await message.answer(
-        "للبحث عن حساب، دوس 🔎 بحث ودز اليوزر.\n\n"
-        "تگدر هم تحفظ الحسابات بالمفضلة، تشوف إحصائياتك، أو تحمل مقطع تيك توك من رابطه.\n\n"
-        "زر كشف الرابط ما يطلع معلومات البريد أو الهاتف؛ هالمعلومات خاصة بصاحب الحساب.",
+        "هلا بيك حياتي مايرادلها شي دوس بحث\n\n"
+        "ودز يوزر الحساب وحيطلعلك معلوماته\n\n"
+        "وانشاء الله قريبا ح نضيف بلبوت قائمه المتابعين واليتابعهم تابعونا @bxcode",
         reply_markup=home_keyboard(),
     )
 
 
 @router.message(Command("privacy"))
 async def privacy(message: Message) -> None:
-    await message.answer("🔐 نخزن سجل بحثك ومفضلاتك حتى تبقى بعد إعادة تشغيل البوت. تگدر تمسح بياناتك بأمر /delete_me.")
+    await message.answer("🔐 نخزن سجل بحثك ومفضلاتك حتى تظل موجودة بعد ما يطفي البوت. تگدر تمسح بياناتك بأمر /delete_me.")
 
 
 @router.message(Command("delete_me"))
@@ -751,8 +626,7 @@ async def delete_me(message: Message) -> None:
         await db.execute("DELETE FROM users WHERE user_id=?", (message.from_user.id,))
         await db.commit()
     pending_actions.pop(message.from_user.id, None)
-    pending_downloads.pop(message.from_user.id, None)
-    await message.answer("انمسحت بياناتك. أرسل /start حتى ترجع تستخدم البوت.")
+    await message.answer("انمسحت بياناتك حب. أرسل /start حتى ترجع تستخدم البوت.")
 
 
 @router.message(F.web_app_data)
@@ -766,6 +640,209 @@ async def miniapp_data(message: Message) -> None:
     await touch_user(message.from_user)
     if await allowed(message):
         await send_profile(message.chat.id, message.from_user.id, username)
+
+
+def verify_webapp_init_data(init_data: str, *, now: int | None = None) -> dict | None:
+    """Verify Telegram Mini App initData using the Bot API HMAC procedure."""
+    if not init_data or len(init_data) > 8192:
+        return None
+    try:
+        pairs = parse_qsl(init_data, keep_blank_values=True, strict_parsing=True)
+        values = dict(pairs)
+        if len(values) != len(pairs):
+            return None
+        received_hash = values.pop("hash", "")
+        auth_date = int(values.get("auth_date", "0"))
+        current = int(time.time()) if now is None else now
+        if not received_hash or auth_date > current + 60 or current - auth_date > WEBAPP_AUTH_MAX_AGE:
+            return None
+        data_check_string = "\n".join(f"{key}={value}" for key, value in sorted(values.items()))
+        secret_key = hmac.new(b"WebAppData", BOT_TOKEN.encode(), hashlib.sha256).digest()
+        calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            return None
+        user = json.loads(values.get("user", "{}"))
+        if not isinstance(user, dict) or not isinstance(user.get("id"), int) or isinstance(user.get("id"), bool):
+            return None
+        return user
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
+
+
+async def miniapp_identity(request: web.Request) -> tuple[dict | None, web.Response | None]:
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.startswith("tma "):
+        return None, web.json_response({"error": "افتح Mini App من داخل تيليجرام."}, status=401)
+    user = verify_webapp_init_data(authorization[4:].strip())
+    if not user:
+        return None, web.json_response({"error": "انتهت جلسة تيليجرام أو بياناتها غير صالحة. سكّر التطبيق وافتحه من البوت."}, status=401)
+    status = await is_subscribed(user["id"])
+    if status is None:
+        return None, web.json_response({"error": "ما گدرت أتحقق من اشتراكك هسه. جرّب بعد شوي."}, status=503)
+    if not status:
+        return None, web.json_response({"error": "اشترك بقناة BXCODE وبعدين ارجع افتح التطبيق.", "subscribe_url": CHANNEL_URL}, status=403)
+    await touch_user(SimpleNamespace(
+        id=user["id"], username=user.get("username"), first_name=user.get("first_name") or "",
+    ))
+    return user, None
+
+
+def web_profile_payload(data: dict, username: str, is_favorite: bool) -> dict:
+    def scalar(*keys: str, fallback: str = ""):
+        value = raw_value(data, *keys)
+        if value is None:
+            return fallback
+        if isinstance(value, (str, int, float, bool)):
+            return value if not isinstance(value, str) else value[:700]
+        return str(value)[:700]
+
+    avatar = raw_value(data, "profile", "avatar", "avatar_url")
+    if not isinstance(avatar, str) or not avatar.startswith("https://"):
+        avatar = ""
+    else:
+        parsed = urlsplit(avatar)
+        host = (parsed.hostname or "").casefold()
+        if not host.endswith((".tiktokcdn.com", ".tiktokcdn-us.com", ".ibytedtos.com")):
+            avatar = ""
+    return {
+        "username": str(raw_value(data, "username") or username)[:30],
+        "fullname": str(raw_value(data, "fullname", "nickname") or username)[:100],
+        "userid": str(raw_value(data, "userid", "user_id", "id") or "")[:50],
+        "region": str(raw_value(data, "region", "country") or "")[:50],
+        "language": str(raw_value(data, "language", "lang") or "")[:50],
+        "followers": scalar("followers", "follower_count", fallback="0"),
+        "following": scalar("following", "following_count", fallback="0"),
+        "likes": scalar("likes", "heart_count", "total_favorited", fallback="0"),
+        "videos": scalar("video", "videos", "video_count", fallback="0"),
+        "privacy": account_privacy(data),
+        "bio": str(raw_value(data, "signature", "bio") or "")[:700],
+        "verified": verification_label(data) or "غير متوفر",
+        "avatar": avatar,
+        "profile_url": f"https://www.tiktok.com/@{username}",
+        "is_favorite": is_favorite,
+    }
+
+
+async def webapp_index(request: web.Request) -> web.StreamResponse:
+    index_path = Path(__file__).resolve().parent / "miniapp" / "index.html"
+    if not index_path.is_file():
+        return web.Response(text="Mini App file is missing.", status=503)
+    return web.FileResponse(index_path, headers={"Cache-Control": "no-cache"})
+
+
+async def webapp_health(request: web.Request) -> web.Response:
+    return web.json_response({"status": "ok", "service": "bx-tiktok-miniapp"})
+
+
+async def webapp_lookup(request: web.Request) -> web.Response:
+    user, error = await miniapp_identity(request)
+    if error:
+        return error
+    try:
+        payload = await request.json()
+        username = normalize_username(payload.get("username", ""))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return web.json_response({"error": "دز يوزر تيك توك صحيح، مثل tiktok."}, status=400)
+    user_id = user["id"]
+    now = time.monotonic()
+    if user_id in active_lookups:
+        return web.json_response({"error": "بعدني أجيب نتيجة البحث السابق. انتظر شوي."}, status=409)
+    if now - last_lookup.get(user_id, 0) < LOOKUP_COOLDOWN:
+        return web.json_response({"error": "انتظر ثواني وبعدين ابحث مرة ثانية."}, status=429)
+    active_lookups.add(user_id)
+    try:
+        data = await fetch_profile(username)
+        await record_search(user_id, username)
+        favorite = await save_profile_name(user_id, username, data)
+        return web.json_response({"profile": web_profile_payload(data, username, favorite)})
+    except aiohttp.ClientResponseError as exc:
+        status = 404 if exc.status == 404 else 502
+        message = "ما لگيت الحساب." if status == 404 else "خدمة معلومات الحساب ما جاوبت هسه. جرّب بعدين."
+        return web.json_response({"error": message}, status=status)
+    except (aiohttp.ClientError, asyncio.TimeoutError, ValueError):
+        log.exception("Mini App lookup failed for @%s", username)
+        return web.json_response({"error": "ما گدرت أجيب معلومات الحساب هسه. جرّب بعدين."}, status=502)
+    except Exception:
+        log.exception("Unexpected Mini App lookup error")
+        return web.json_response({"error": "صار خلل مؤقت بالبحث. جرّب بعدين."}, status=500)
+    finally:
+        last_lookup[user_id] = time.monotonic()
+        active_lookups.discard(user_id)
+
+
+async def webapp_favorites(request: web.Request) -> web.Response:
+    user, error = await miniapp_identity(request)
+    if error:
+        return error
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "SELECT username,display_name FROM favorites WHERE user_id=? ORDER BY added_at DESC, username LIMIT 100",
+            (user["id"],),
+        )
+        rows = await cursor.fetchall()
+    return web.json_response({"favorites": [{"username": name, "display_name": display or ""} for name, display in rows]})
+
+
+async def webapp_add_favorite(request: web.Request) -> web.Response:
+    user, error = await miniapp_identity(request)
+    if error:
+        return error
+    try:
+        payload = await request.json()
+        username = normalize_username(payload.get("username", ""))
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return web.json_response({"error": "دز يوزر صحيح حتى نضيفه للمفضلة."}, status=400)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO favorites(user_id,username,added_at,display_name) VALUES(?,?,?,?)",
+            (user["id"], normalized_key(username), datetime.now(timezone.utc).isoformat(), ""),
+        )
+        await db.commit()
+    return web.json_response({"ok": True, "username": username, "is_favorite": True})
+
+
+async def webapp_remove_favorite(request: web.Request) -> web.Response:
+    user, error = await miniapp_identity(request)
+    if error:
+        return error
+    try:
+        username = normalize_username(request.match_info["username"])
+    except ValueError:
+        return web.json_response({"error": "اسم الحساب مو صحيح."}, status=400)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM favorites WHERE user_id=? AND lower(username)=lower(?)", (user["id"], username))
+        await db.commit()
+    return web.json_response({"ok": True, "username": username, "is_favorite": False})
+
+
+async def webapp_stats(request: web.Request) -> web.Response:
+    user, error = await miniapp_identity(request)
+    if error:
+        return error
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute("SELECT searches FROM users WHERE user_id=?", (user["id"],))
+        user_row = await cursor.fetchone()
+        cursor = await db.execute("SELECT COUNT(*) FROM favorites WHERE user_id=?", (user["id"],))
+        favorites_count = (await cursor.fetchone())[0]
+        cursor = await db.execute("SELECT username FROM searches WHERE user_id=? ORDER BY id DESC LIMIT 10", (user["id"],))
+        recent = [row[0] for row in await cursor.fetchall()]
+    return web.json_response({
+        "searches": user_row[0] if user_row else 0,
+        "favorites": favorites_count,
+        "recent": recent,
+    })
+
+
+def create_web_app() -> web.Application:
+    app = web.Application(client_max_size=16 * 1024)
+    app.router.add_get("/", webapp_index)
+    app.router.add_get("/healthz", webapp_health)
+    app.router.add_post("/api/lookup", webapp_lookup)
+    app.router.add_get("/api/favorites", webapp_favorites)
+    app.router.add_post("/api/favorites", webapp_add_favorite)
+    app.router.add_delete("/api/favorites/{username}", webapp_remove_favorite)
+    app.router.add_get("/api/stats", webapp_stats)
+    return app
 
 
 @router.message(F.text)
@@ -785,7 +862,7 @@ async def text_message(message: Message) -> None:
     try:
         username = normalize_username(message.text)
     except ValueError:
-        await message.answer("دز يوزر تيك توك صحيح.")
+        await message.answer("دز يوزر تيك توك صحيح حب.")
         return
     await touch_user(message.from_user)
     if await allowed(message):
@@ -803,19 +880,18 @@ async def callbacks(call: CallbackQuery) -> None:
     try:
         if action == "check_sub":
             status = await is_subscribed(user.id)
-            await call.answer("تم الاشتراك ✅" if status else "اشترك بالقناة وبعدين تحقق.", show_alert=status is not True)
+            await call.answer("تم الاشتراك حب ✅" if status else "اشترك بالقناة وبعدين تحقق حب.", show_alert=status is not True)
             if status:
-                await edit_message(message, "هلا بيك، اختار شتريد من القائمة 👇", home_keyboard())
+                await edit_message(message, "هلا بيك حب، اختار شتريد من القائمة 👇", home_keyboard())
             return
         protected = {
             "search", "help", "home", "favorites", "mystats", "favadd", "favdel", "cancel",
             "favpage", "favdelpage", "fdelask", "fdelok", "fdelno", "fopen", "refresh", "report", "fav",
-            "link_info", "download", "download_cancel", "dl",
         }
         if any(action == item or action.startswith(item + ":") for item in protected):
             status = await is_subscribed(user.id)
             if status is not True:
-                await call.answer("لازم تشترك بقناة @bxcode أولاً.", show_alert=True)
+                await call.answer("الاشتراك بقناة @bxcode مطلوب أول حب", show_alert=True)
                 await edit_message(message, "🔒 اشترك بالقناة وبعدين ارجع:", subscription_keyboard())
                 return
         if action == "noop":
@@ -825,51 +901,24 @@ async def callbacks(call: CallbackQuery) -> None:
             await call.answer()
         if action == "home":
             pending_actions.pop(user.id, None)
-            pending_downloads.pop(user.id, None)
-            await edit_message(message, "هلا بيك، اختار شتريد من القائمة 👇", home_keyboard())
-        elif action == "cancel":
-            pending_actions.pop(user.id, None)
-            pending_downloads.pop(user.id, None)
-            await edit_message(message, "تم الإلغاء. هاي القائمة الرئيسية:", home_keyboard())
-        elif action == "link_info":
-            await edit_message(
-                message,
-                "ما أگدر أكشف البريد أو رقم الهاتف أو طرق استعادة أي حساب من اليوزر.\n\nإذا الحساب حسابك، راجع معلوماته من إعدادات الحساب داخل تطبيق TikTok.",
-                back_keyboard(),
-            )
-        elif action == "download":
-            pending_downloads.pop(user.id, None)
-            await _set_pending(message, user.id, "download_url", "⬇️ دز رابط مقطع تيك توك العام أو الرابط المختصر:")
-        elif action == "download_cancel":
-            pending_downloads.pop(user.id, None)
-            pending_actions.pop(user.id, None)
-            await edit_message(message, "تم إلغاء طلب التنزيل.", home_keyboard())
-        elif action.startswith("dl:"):
-            quality = action.split(":", 1)[1]
-            pending = pending_downloads.get(user.id)
-            if pending is None or pending[0] != message.chat.id:
-                await edit_message(message, "انتهى طلب التنزيل. دوس الزر وابدأ من جديد.", home_keyboard())
-                return
-            pending_downloads.pop(user.id, None)
-            await deliver_clip(message.chat.id, message, pending[2], quality)
+            await edit_message(message, "هلا بيك حب، اختار شتريد من القائمة 👇", home_keyboard())
         elif action == "search":
-            await _set_pending(message, user.id, "search", "🔎 دز يوزر تيك توك، ويا @ أو بدونها.")
+            await _set_pending(message, user.id, "search", "🔎 دز يوزر تيك توك حب، ويا أو بدون @.")
         elif action == "help":
             await edit_message(
                 message,
-                "للبحث عن حساب، دوس 🔎 بحث ودز اليوزر.\n\n"
-                "تگدر تحفظ الحسابات بالمفضلة أو تحمل مقطع من رابط تيك توك.\n\n"
-                "كشف البريد والهاتف وطرق الاستعادة مو متاح؛ هذي معلومات خاصة بصاحب الحساب.",
+                "هلا بيك حياتي مايرادلها شي دوس بحث\n\n"
+                "ودز يوزر الحساب وحيطلعلك معلوماته\n\n"
+                "وانشاء الله قريبا ح نضيف بلبوت قائمه المتابعين واليتابعهم تابعونا @bxcode",
                 back_keyboard(),
             )
         elif action == "mystats":
             await show_stats(message, user.id)
         elif action == "favorites":
             pending_actions.pop(user.id, None)
-            pending_downloads.pop(user.id, None)
             await show_favorites(message, user.id)
         elif action == "favadd":
-            await _set_pending(message, user.id, "favadd", "➕ دز يوزر الحساب اللي تريد تضيفه للمفضلة.")
+            await _set_pending(message, user.id, "favadd", "➕ دز يوزر الحساب اللي تريد تضيفه للمفضلة حب.")
         elif action == "favdel":
             await show_favorites(message, user.id, deleting=True)
         elif action.startswith("favpage:"):
@@ -883,11 +932,11 @@ async def callbacks(call: CallbackQuery) -> None:
             _, username, page_text = action.split(":", 2)
             username = normalize_username(username)
             if not await is_favorite(user.id, username):
-                await call.answer("هالحساب مو بقائمة مفضلاتك.", show_alert=True)
+                await call.answer("هالحساب مو بقائمة مفضلاتك حب.", show_alert=True)
                 return
             await edit_message(
                 message,
-                f"متأكد تريد تحذف @{html.escape(username)} من المفضلة؟",
+                f"متأكد تريد تحذف @{html.escape(username)} من المفضلة حب؟",
                 InlineKeyboardMarkup(inline_keyboard=[
                     [button("إي احذفها", f"fdelok:{username}:{int(page_text)}", style="danger"),
                      button("لا رجّعني", f"fdelno:{int(page_text)}")],
@@ -910,11 +959,11 @@ async def callbacks(call: CallbackQuery) -> None:
                 exists = await cursor.fetchone() is not None
                 if exists:
                     await db.execute("DELETE FROM favorites WHERE user_id=? AND lower(username)=lower(?)", (user.id, username))
-                    text = f"انحذف @{html.escape(username)} من المفضلة."
+                    text = f"انحذف @{html.escape(username)} من المفضلة حب."
                 else:
                     await db.execute("INSERT OR IGNORE INTO favorites(user_id,username,added_at,display_name) VALUES(?,?,?,?)",
                                      (user.id, normalized_key(username), datetime.now(timezone.utc).isoformat(), ""))
-                    text = "انضاف للمفضلة ⭐"
+                    text = "تمت الإضافة للمفضلة حب ⭐"
                 await db.commit()
             await call.answer(text, show_alert=False)
             try:
@@ -934,7 +983,7 @@ async def callbacks(call: CallbackQuery) -> None:
     except Exception:
         log.exception("Callback failed for user %s, action=%s", user.id, action)
         try:
-            await edit_message(message, "❌ صار خطأ هسه. جرّب مرة ثانية.", home_keyboard())
+            await edit_message(message, "❌ صار خطأ هسه، جرّب مرة ثانية حب.", home_keyboard())
         except Exception:
             pass
 
@@ -951,10 +1000,17 @@ async def main() -> None:
                 text="فتح Mini App", web_app=WebAppInfo(url=MINI_APP_URL)))
         except Exception:
             log.exception("Could not set bot menu button; configure it manually in BotFather if needed")
-    log.info("Starting %s; required channel=%s; mini app configured=%s", BOT_NAME, CHANNEL, bool(MINI_APP_URL))
+    app_runner = web.AppRunner(create_web_app())
     try:
+        await app_runner.setup()
+        port = int(os.getenv("PORT", "8000"))
+        site = web.TCPSite(app_runner, host="0.0.0.0", port=port)
+        await site.start()
+        log.info("Starting %s; required channel=%s; mini app configured=%s; web port=%s",
+                 BOT_NAME, CHANNEL, bool(MINI_APP_URL), port)
         await dispatcher.start_polling(bot, allowed_updates=dispatcher.resolve_used_update_types())
     finally:
+        await app_runner.cleanup()
         await bot.session.close()
 
 
